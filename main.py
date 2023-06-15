@@ -17,9 +17,22 @@ import tempfile
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import tensorflow as tf
-from predict.prediction import predict_new_images, skincare_tips
 
+# Inisialisasi klien penyimpanan Google Cloud
+service_account = 'attacne-project-6bd247a71c17.json'
+client = storage.Client.from_service_account_json(service_account)
+
+# Inisialisasi flask
 main = Flask(__name__)
+
+#load model dari file model
+bucket_name = 'attacne_dataset'
+model_path = 'model.h5'
+bucket = client.get_bucket(bucket_name)
+blob = bucket.blob(model_path)
+model_path_local = 'model.h5'
+blob.download_to_filename(model_path_local)
+loaded_model = tf.keras.models.load_model(model_path_local)
 
 model = load_model('model.h5') #load model
 
@@ -28,36 +41,60 @@ def load_model():
     print("Model loaded")
     return model
 
+# Define the class labels
+class_labels = ['Blackhead', 'Papules', 'Pustules', 'Nodules', 'Whitehead', 'Healthy skin']
+
+# Define the skincare tips for each class
+skincare_tips = {
+    'Blackhead': 'Bersihkan wajah secara rutin dan gunakan produk skincare yang mengandung salicylic acid',
+    'Whitehead': 'Lakukan exfoliasi secara rutin dengan alat dan produk yang lembut. Hindari produk-produk yang dapat menyumbat pori-pori kamu',
+    'Papules': 'Aplikasikan produk yang dapat mengurangi inflamasi pada wajah, seperti menggunakan produk yang mengandung benzoyl peroxide atau salicylic acid',
+    'Pustules': 'Gunakan produk-produk yang tidak mengandung minyak dan non-comedogenic',
+    'Nodules': 'Jerawat jenis nodules perlu konsultasi dengan ahli dermatologi',
+    'Healthy skin': 'Pertahankan kondisi wajahmu dengan tetap rutin menggunakan skincare yang cocok dengan kulitmu. Jangan lupa untuk selalu double cleansing, menggunakan moisturizer, dan memakain sunscreen untuk menjaga kulit tetap lembap dan terlindung dari sinar matahari.'
+}
+
+# Define the allowed file extensions for uploads
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 #endpoint index/homepage
 @main.route('/', methods=["GET"])
 def index():
-    return '<h1> <center> Welcome to T2T API Homepage, port 4000 </center> </h1>'
+    return '<h1> <center> Welcome to Attacne API Homepage, port 5000 </center> </h1>'
 
 @main.route('/predict', methods=['POST'])
-def predict_skin_condition():
-    # Check if an image was uploaded
-    if 'image' not in request.files:
-        return jsonify({"error": "No image uploaded"})
+def predict():
+    # Check if an image file is included in the request
+    if 'file' not in request.files:
+        return jsonify({'error': 'No image file found'})
 
-    # Save the uploaded image 
-    temp_file = tempfile.NamedTemporaryFile(delete=False)
-    image = (temp_file.name), 
+    file = request.files['file']
 
-    image.save(image)
+    # Check if the file is allowed
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file type. Allowed file types are PNG, JPG, and JPEG'})
 
-    # Open and preprocess the image
-    img = Image.open(image)
-    img = predict_new_images(img)
+    # Save the file to a temporary directory
+    filename = secure_filename(file.filename)
+    temp_path = os.path.join(tempfile.gettempdir(), filename)
+    file.save(temp_path)
 
-    # Make predictions
-    class_labels = ['Blackhead', 'Papules', 'Pustules', 'Nodules', 'Whitehead', 'Healthy skin']
-    predictions = model.predict(img)
-    predicted_class_index = np.argmax(predictions)
-    predicted_class = class_labels[predicted_class_index]
-    skincare_tip = skincare_tips[predicted_class]
+    # Load and preprocess the image
+    img = image.load_img(temp_path, target_size=(128, 128))
+    img_array = image.img_to_array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
 
-    # Return the predicted class and skincare tip
-    return jsonify({"predicted_class": predicted_class, "skincare_tip": skincare_tip})
+    # Make the prediction
+    prediction = model.predict(img_array)
+    predicted_class = np.argmax(prediction)
+    predicted_label = class_labels[predicted_class]
+    skincare_tip = skincare_tips[predicted_label]
+
+    # Return the prediction and skincare tip
+    return jsonify({'prediction': predicted_label, 'skincare_tip': skincare_tip})
 
 if __name__ == '__main__':
     main.run(debug=True, host='0.0.0.0')
