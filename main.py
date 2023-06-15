@@ -34,7 +34,7 @@ model_path_local = 'model.h5'
 blob.download_to_filename(model_path_local)
 loaded_model = tf.keras.models.load_model(model_path_local)
 
-model = load_model('model.h5') #load model
+model = tf.keras.models.load_model(model_path_local) #load model
 
 def load_model():
     model = tf.keras.models.load_model('model.h5')
@@ -97,4 +97,4 @@ def predict():
     return jsonify({'prediction': predicted_label, 'skincare_tip': skincare_tip})
 
 if __name__ == '__main__':
-    main.run(debug=True, host='0.0.0.0')
+    main.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
